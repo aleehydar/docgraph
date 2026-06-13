@@ -8,3 +8,9 @@ mlruns/
 *.egg-info/
 .DS_Store
 node_modules/
+node_modules/
+dist/
+.env
+data/
+__pycache__/
+venv/
