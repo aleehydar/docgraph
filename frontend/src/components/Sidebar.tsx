@@ -1,6 +1,6 @@
 import { useState } from "react";
 import clsx from "clsx";
-import { Activity, Database, Network, Sparkles, Upload, Trash2 } from "lucide-react";
+import { Activity, Database, Network, Sparkles, Upload } from "lucide-react";
 import type { HealthResponse, QuerySettings, View } from "../types";
 import { isServiceOk, resetDatabase } from "../lib/api";
 

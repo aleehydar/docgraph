@@ -117,9 +117,10 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
               const start = link.source;
               const end = link.target;
               if (typeof start !== 'object' || typeof end !== 'object') return;
-              const textPos = Object.assign(...['x', 'y'].map(c => ({
-                [c]: start[c] + (end[c] - start[c]) / 2 
-              })));
+              const textPos = { 
+ 			 x: start.x + (end.x - start.x) / 2,
+ 			 y: start.y + (end.y - start.y) / 2
+				};
               const relLink = { x: end.x - start.x, y: end.y - start.y };
               let textAngle = Math.atan2(relLink.y, relLink.x);
               if (textAngle > Math.PI / 2) textAngle = -(Math.PI - textAngle);
