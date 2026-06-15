@@ -14,11 +14,12 @@ settings = get_settings()
 
 # ── Entity detection from query ───────────────────────────────────────────────
 
-ENTITY_DETECT_PROMPT = """Extract named entities from the query below.
-Return ONLY a JSON array of entity name strings.
-Example: ["Apple", "Tim Cook", "iPhone"]
+ENTITY_DETECT_PROMPT = """Extract specific named entities from the query below.
+Focus on: proper nouns, organization names, law names, act names, section numbers, place names.
+Ignore generic words like "people", "organizations", "topics", "relationships".
+Return ONLY a JSON array of specific entity name strings.
+Example: ["Companies Act 2017", "Commission", "Pakistan"]
 Query: {query}"""
-
 
 async def detect_query_entities(query: str) -> list[str]:
     client = get_groq_client()
