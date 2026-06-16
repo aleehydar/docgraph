@@ -158,3 +158,28 @@ def test_get_embedder_defers_sentence_transformers_import():
     ):
         with pytest.raises(ModuleNotFoundError):
             ingestion_service.get_embedder()
+
+
+def test_get_embedder_initializes_when_sentence_transformers_available():
+    import builtins
+    from types import SimpleNamespace
+    from app.services import ingestion_service
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name):
+            self.model_name = model_name
+
+    original_import = builtins.__import__
+
+    def _import_with_fake_sentence_transformers(name, *args, **kwargs):
+        if name == "sentence_transformers":
+            return SimpleNamespace(SentenceTransformer=FakeSentenceTransformer)
+        return original_import(name, *args, **kwargs)
+
+    with (
+        patch.object(ingestion_service, "_embedder", None),
+        patch("builtins.__import__", side_effect=_import_with_fake_sentence_transformers),
+    ):
+        embedder = ingestion_service.get_embedder()
+        assert isinstance(embedder, FakeSentenceTransformer)
+        assert embedder.model_name == ingestion_service.settings.embedding_model
