@@ -122,3 +122,18 @@ def test_health_endpoint_structure(client):
         assert "neo4j" in data
         assert "faiss" in data
         assert "llm" in data
+
+
+def test_startup_skips_missing_embedder():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with (
+        patch("app.main.graph_service.connect", AsyncMock()),
+        patch("app.main.graph_service.close", AsyncMock()),
+        patch("app.main.get_embedder", side_effect=ModuleNotFoundError("sentence_transformers")),
+        patch("app.main.get_faiss_index", MagicMock()),
+    ):
+        with TestClient(app) as c:
+            r = c.get("/")
+            assert r.status_code == 200

@@ -19,7 +19,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("Starting DocGraph...")
     await graph_service.connect()
-    get_embedder()      # warm up embedder
+    try:
+        get_embedder()  # warm up embedder
+    except ModuleNotFoundError:
+        logger.warning("sentence-transformers not installed; embedder warm-up skipped")
     get_faiss_index()   # warm up / load FAISS
     logger.success("DocGraph ready")
     yield
