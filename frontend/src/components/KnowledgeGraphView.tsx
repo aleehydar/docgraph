@@ -71,7 +71,10 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
             nodeId="id"
             nodeLabel="label"
             nodeColor={(node: any) => getNodeColor(node.type)}
-            nodeRelSize={6}
+	    cooldownTicks={100}
+	    onEngineStop={() => null}
+	    enableNodeDrag={false}          
+  	    nodeRelSize={6}
             linkColor={() => "#3f3f46"} // zinc-700
             linkWidth={1.5}
             linkDirectionalArrowLength={3.5}
