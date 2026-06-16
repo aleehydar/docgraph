@@ -33,6 +33,7 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
   const containerRef = useRef<HTMLDivElement>(null);
   const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
+  const graphRef = useRef<any>(null);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -52,90 +53,103 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
     setSelectedNode(node as GraphNode);
   }, []);
 
-  // Deep clone nodes and edges because ForceGraph2D mutates them (changes source/target strings to object references), which crashes React when the parent tries to render them as strings.
+  // Deep clone and limit data to prevent physics explosion
   const graphData = useMemo(() => {
+    const limitedEdges = edges.slice(0, 40);
     return {
       nodes: nodes.map(n => ({ ...n })),
-      links: edges.map(e => ({ ...e }))
+      links: limitedEdges.map(e => ({ ...e })),
     };
   }, [nodes, edges]);
+
+  // Auto-zoom to fit after engine stops
+  const handleEngineStop = useCallback(() => {
+    if (graphRef.current) {
+      graphRef.current.zoomToFit(400, 40);
+    }
+  }, []);
 
   return (
     <div className="relative flex h-[400px] w-full flex-col">
       <div ref={containerRef} className="flex-1 overflow-hidden rounded-lg bg-zinc-950/50 border border-border">
         {dimensions.width > 0 && dimensions.height > 0 && (
           <ForceGraph2D
+            ref={graphRef}
             width={dimensions.width}
             height={dimensions.height}
             graphData={graphData}
             nodeId="id"
             nodeLabel="label"
             nodeColor={(node: any) => getNodeColor(node.type)}
-	    cooldownTicks={100}
-	    onEngineStop={() => null}
-	    enableNodeDrag={false}          
-  	    nodeRelSize={6}
-            linkColor={() => "#3f3f46"} // zinc-700
-            linkWidth={1.5}
-            linkDirectionalArrowLength={3.5}
+            nodeRelSize={5}
+            linkColor={() => "#52525b"}
+            linkWidth={1}
+            linkDirectionalArrowLength={3}
             linkDirectionalArrowRelPos={1}
             onNodeClick={handleNodeClick}
+            enableNodeDrag={false}
+            cooldownTicks={80}
+            warmupTicks={30}
+            d3AlphaDecay={0.04}
+            d3VelocityDecay={0.6}
+            onEngineStop={handleEngineStop}
             nodeCanvasObject={(node: any, ctx, globalScale) => {
-              const label = node.label || "Unknown";
-              const fontSize = 12 / globalScale;
+              if (!node.x || !node.y) return;
+              const label = (node.label || "Unknown").slice(0, 20);
+              const fontSize = Math.max(8, 11 / globalScale);
               ctx.font = `${fontSize}px Sans-Serif`;
               const textWidth = ctx.measureText(label).width;
-              const bckgDimensions = [textWidth, fontSize].map(n => n + fontSize * 0.2);
+              const pad = fontSize * 0.3;
+              const bw = textWidth + pad * 2;
+              const bh = fontSize + pad * 2;
 
-              ctx.fillStyle = 'rgba(0, 0, 0, 0.6)';
-              ctx.fillRect(
-                node.x - bckgDimensions[0] / 2,
-                node.y - bckgDimensions[1] / 2,
-                bckgDimensions[0],
-                bckgDimensions[1]
-              );
-
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
+              // Draw circle
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, 4, 0, 2 * Math.PI);
               ctx.fillStyle = getNodeColor(node.type);
-              ctx.fillText(label, node.x, node.y);
+              ctx.fill();
 
-              node.__bckgDimensions = bckgDimensions; // to re-use in nodePointerAreaPaint
+              // Draw label background
+              ctx.fillStyle = "rgba(9,9,11,0.85)";
+              ctx.fillRect(node.x - bw / 2, node.y + 5, bw, bh);
+
+              // Draw label text
+              ctx.textAlign = "center";
+              ctx.textBaseline = "top";
+              ctx.fillStyle = getNodeColor(node.type);
+              ctx.fillText(label, node.x, node.y + 5 + pad);
+
+              node.__bckgDimensions = [bw, bh];
             }}
             nodePointerAreaPaint={(node: any, color, ctx) => {
               ctx.fillStyle = color;
-              const bckgDimensions = node.__bckgDimensions;
-              bckgDimensions && ctx.fillRect(
-                node.x - bckgDimensions[0] / 2,
-                node.y - bckgDimensions[1] / 2,
-                bckgDimensions[0],
-                bckgDimensions[1]
-              );
+              ctx.beginPath();
+              ctx.arc(node.x, node.y, 8, 0, 2 * Math.PI);
+              ctx.fill();
             }}
             linkCanvasObjectMode={() => "after"}
             linkCanvasObject={(link: any, ctx, globalScale) => {
-              // Only show link labels if zoomed in
               if (globalScale < 1.5) return;
-              const MAX_FONT_SIZE = 4;
               const start = link.source;
               const end = link.target;
-              if (typeof start !== 'object' || typeof end !== 'object') return;
-              const textPos = { 
- 			 x: start.x + (end.x - start.x) / 2,
- 			 y: start.y + (end.y - start.y) / 2
-				};
+              if (typeof start !== "object" || typeof end !== "object") return;
+              if (!start.x || !end.x) return;
+              const textPos = {
+                x: start.x + (end.x - start.x) / 2,
+                y: start.y + (end.y - start.y) / 2,
+              };
               const relLink = { x: end.x - start.x, y: end.y - start.y };
               let textAngle = Math.atan2(relLink.y, relLink.x);
               if (textAngle > Math.PI / 2) textAngle = -(Math.PI - textAngle);
               if (textAngle < -Math.PI / 2) textAngle = -(-Math.PI - textAngle);
-              const label = link.type || "";
-              ctx.font = `${MAX_FONT_SIZE}px Sans-Serif`;
+              const label = (link.type || "").slice(0, 15);
+              ctx.font = "4px Sans-Serif";
               ctx.save();
               ctx.translate(textPos.x, textPos.y);
               ctx.rotate(textAngle);
-              ctx.textAlign = 'center';
-              ctx.textBaseline = 'middle';
-              ctx.fillStyle = '#a1a1aa'; // zinc-400
+              ctx.textAlign = "center";
+              ctx.textBaseline = "middle";
+              ctx.fillStyle = "#71717a";
               ctx.fillText(label, 0, 0);
               ctx.restore();
             }}
@@ -147,7 +161,7 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
         <div className="absolute bottom-4 right-4 z-10 w-64 rounded-xl border border-border bg-surface-overlay p-4 shadow-xl animate-in slide-in-from-bottom-2">
           <div className="mb-2 flex items-center justify-between">
             <h4 className="font-semibold text-white truncate pr-2">{selectedNode.label}</h4>
-            <button 
+            <button
               onClick={() => setSelectedNode(null)}
               className="text-zinc-500 hover:text-white"
             >
