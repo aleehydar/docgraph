@@ -53,7 +53,6 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
     setSelectedNode(node as GraphNode);
   }, []);
 
-  // Deep clone and limit data to prevent physics explosion
   const graphData = useMemo(() => {
     const limitedEdges = edges.slice(0, 40);
     return {
@@ -62,7 +61,6 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
     };
   }, [nodes, edges]);
 
-  // Auto-zoom to fit after engine stops
   const handleEngineStop = useCallback(() => {
     if (graphRef.current) {
       graphRef.current.zoomToFit(400, 40);
@@ -102,23 +100,16 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
               const pad = fontSize * 0.3;
               const bw = textWidth + pad * 2;
               const bh = fontSize + pad * 2;
-
-              // Draw circle
               ctx.beginPath();
               ctx.arc(node.x, node.y, 4, 0, 2 * Math.PI);
               ctx.fillStyle = getNodeColor(node.type);
               ctx.fill();
-
-              // Draw label background
               ctx.fillStyle = "rgba(9,9,11,0.85)";
               ctx.fillRect(node.x - bw / 2, node.y + 5, bw, bh);
-
-              // Draw label text
               ctx.textAlign = "center";
               ctx.textBaseline = "top";
               ctx.fillStyle = getNodeColor(node.type);
               ctx.fillText(label, node.x, node.y + 5 + pad);
-
               node.__bckgDimensions = [bw, bh];
             }}
             nodePointerAreaPaint={(node: any, color, ctx) => {
@@ -156,15 +147,11 @@ export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewP
           />
         )}
       </div>
-
       {selectedNode && (
         <div className="absolute bottom-4 right-4 z-10 w-64 rounded-xl border border-border bg-surface-overlay p-4 shadow-xl animate-in slide-in-from-bottom-2">
           <div className="mb-2 flex items-center justify-between">
             <h4 className="font-semibold text-white truncate pr-2">{selectedNode.label}</h4>
-            <button
-              onClick={() => setSelectedNode(null)}
-              className="text-zinc-500 hover:text-white"
-            >
+            <button onClick={() => setSelectedNode(null)} className="text-zinc-500 hover:text-white">
               <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
               </svg>
