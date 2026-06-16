@@ -1,11 +1,10 @@
 import uuid
 import json
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import AsyncGenerator, TYPE_CHECKING
 from loguru import logger
 
 from groq import AsyncGroq
-from sentence_transformers import SentenceTransformer
 import faiss
 import numpy as np
 
@@ -15,16 +14,20 @@ from app.models.schemas import IngestResponse
 
 settings = get_settings()
 
+if TYPE_CHECKING:
+    from sentence_transformers import SentenceTransformer
+
 # ── Globals (loaded once) ────────────────────────────────────────────────────
-_embedder: SentenceTransformer | None = None
+_embedder: "SentenceTransformer | None" = None
 _faiss_index: faiss.IndexFlatL2 | None = None
 _faiss_meta: list[dict] = []   # parallel list: chunk_id, text, doc_id
 _groq_client: AsyncGroq | None = None
 
 
-def get_embedder() -> SentenceTransformer:
+def get_embedder() -> "SentenceTransformer":
     global _embedder
     if _embedder is None:
+        from sentence_transformers import SentenceTransformer
         _embedder = SentenceTransformer(settings.embedding_model)
         logger.info(f"Embedder loaded: {settings.embedding_model}")
     return _embedder

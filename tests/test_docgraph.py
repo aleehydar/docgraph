@@ -122,3 +122,64 @@ def test_health_endpoint_structure(client):
         assert "neo4j" in data
         assert "faiss" in data
         assert "llm" in data
+
+
+def test_startup_skips_missing_embedder():
+    from fastapi.testclient import TestClient
+    from app.main import app
+
+    with (
+        patch("app.main.graph_service.connect", AsyncMock()),
+        patch("app.main.graph_service.close", AsyncMock()),
+        patch("app.main.get_embedder", side_effect=ModuleNotFoundError("sentence_transformers")),
+        patch("app.main.get_faiss_index", MagicMock()),
+        patch("app.main.logger.warning") as warning_mock,
+    ):
+        with TestClient(app) as c:
+            r = c.get("/")
+            assert r.status_code == 200
+        warning_mock.assert_called_once_with("sentence-transformers not installed; embedder warm-up skipped")
+
+
+def test_get_embedder_defers_sentence_transformers_import():
+    import builtins
+    from app.services import ingestion_service
+
+    original_import = builtins.__import__
+
+    def _import_with_missing_sentence_transformers(name, *args, **kwargs):
+        if name == "sentence_transformers":
+            raise ModuleNotFoundError("sentence_transformers")
+        return original_import(name, *args, **kwargs)
+
+    with (
+        patch.object(ingestion_service, "_embedder", None),
+        patch("builtins.__import__", side_effect=_import_with_missing_sentence_transformers),
+    ):
+        with pytest.raises(ModuleNotFoundError):
+            ingestion_service.get_embedder()
+
+
+def test_get_embedder_initializes_when_sentence_transformers_available():
+    import builtins
+    from types import SimpleNamespace
+    from app.services import ingestion_service
+
+    class FakeSentenceTransformer:
+        def __init__(self, model_name):
+            self.model_name = model_name
+
+    original_import = builtins.__import__
+
+    def _import_with_fake_sentence_transformers(name, *args, **kwargs):
+        if name == "sentence_transformers":
+            return SimpleNamespace(SentenceTransformer=FakeSentenceTransformer)
+        return original_import(name, *args, **kwargs)
+
+    with (
+        patch.object(ingestion_service, "_embedder", None),
+        patch("builtins.__import__", side_effect=_import_with_fake_sentence_transformers),
+    ):
+        embedder = ingestion_service.get_embedder()
+        assert isinstance(embedder, FakeSentenceTransformer)
+        assert embedder.model_name == ingestion_service.settings.embedding_model
