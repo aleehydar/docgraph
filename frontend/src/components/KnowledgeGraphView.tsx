@@ -21,10 +21,10 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const layout = useMemo(() => {
-    if (!nodes.length) return { positions: {}, edges: [] };
+    if (!nodes.length) return { positions: {} as Record<string, {x:number,y:number}>, edges: [] as GraphEdge[] };
     const positions: Record<string, { x: number; y: number }> = {};
-    const W = 580, H = 380, cx = W / 2, cy = H / 2;
-    const R = Math.min(cx, cy) - 50;
+    const W = 580, H = 360, cx = W / 2, cy = H / 2;
+    const R = Math.min(cx, cy) - 55;
     nodes.forEach((n, i) => {
       const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
       positions[n.id] = nodes.length === 1
@@ -40,9 +40,8 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const { positions, edges: layoutEdges } = layout;
-    const W = canvas.width, H = canvas.height;
 
-    ctx.clearRect(0, 0, W, H);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
 
     // Draw edges
     layoutEdges.forEach(e => {
@@ -55,8 +54,7 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
       ctx.strokeStyle = "#3f3f46";
       ctx.lineWidth = 1;
       ctx.stroke();
-
-      // Arrow
+      // Arrowhead at midpoint
       const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
       const mx = (src.x + tgt.x) / 2;
       const my = (src.y + tgt.y) / 2;
@@ -74,8 +72,6 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
       const pos = positions[n.id];
       if (!pos) return;
       const color = getColor(n.type);
-
-      // Circle
       ctx.beginPath();
       ctx.arc(pos.x, pos.y, 8, 0, 2 * Math.PI);
       ctx.fillStyle = color + "33";
@@ -84,17 +80,15 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
       ctx.arc(pos.x, pos.y, 5, 0, 2 * Math.PI);
       ctx.fillStyle = color;
       ctx.fill();
-
-      // Label
       const label = (n.label || n.id).slice(0, 22);
-      ctx.font = "10px Inter, sans-serif";
+      ctx.font = "10px sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
       const tw = ctx.measureText(label).width;
-      ctx.fillStyle = "rgba(9,9,11,0.8)";
-      ctx.fillRect(pos.x - tw / 2 - 2, pos.y + 8, tw + 4, 13);
+      ctx.fillStyle = "rgba(9,9,11,0.85)";
+      ctx.fillRect(pos.x - tw / 2 - 2, pos.y + 9, tw + 4, 13);
       ctx.fillStyle = color;
-      ctx.fillText(label, pos.x, pos.y + 9);
+      ctx.fillText(label, pos.x, pos.y + 10);
     });
   }, [layout, nodes]);
 
@@ -104,8 +98,14 @@ export default function KnowledgeGraphView({ nodes, edges }: Props) {
     <canvas
       ref={canvasRef}
       width={580}
-      height={380}
-      style={{ width: "100%", height: "100%", borderRadius: "8px" }}
+      height={360}
+      style={{
+        width: "100%",
+        height: "100%",
+        borderRadius: "8px",
+        pointerEvents: "none",
+        display: "block",
+      }}
     />
   );
 }
