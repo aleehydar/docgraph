@@ -1,5 +1,6 @@
 import { useEffect, useRef, useMemo } from "react";
 import type { GraphEdge, GraphNode } from "../types";
+import { memo } from "react";
 
 const NODE_COLORS: Record<string, string> = {
   person: "#38bdf8",
@@ -17,7 +18,7 @@ function getColor(type?: string) {
 
 interface Props { nodes: GraphNode[]; edges: GraphEdge[]; }
 
-export default function KnowledgeGraphView({ nodes, edges }: Props) {
+export default memo(function KnowledgeGraphView({ nodes, edges }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const layout = useMemo(() => {

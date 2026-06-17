@@ -1,4 +1,5 @@
 import clsx from "clsx";
+import { memo } from "react";
 import type { GraphEdge, GraphNode } from "../types";
 import KnowledgeGraphView from "./KnowledgeGraphView";
 
@@ -23,7 +24,7 @@ interface GraphPanelProps {
   };
 }
 
-export default function GraphPanel({ nodes, edges, stats }: GraphPanelProps) {
+export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps) { {
   const hasGraph = nodes.length > 0 || edges.length > 0;
 
   return (
