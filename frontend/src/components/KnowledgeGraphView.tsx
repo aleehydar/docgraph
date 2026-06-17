@@ -1,131 +1,111 @@
-import { useCallback, useEffect, useRef, useState, useMemo } from "react";
-import ForceGraph2D from "react-force-graph-2d";
+import { useEffect, useRef, useMemo } from "react";
 import type { GraphEdge, GraphNode } from "../types";
 
-const TYPE_COLORS: Record<string, string> = {
+const NODE_COLORS: Record<string, string> = {
   person: "#38bdf8",
   organization: "#34d399",
   location: "#fbbf24",
   concept: "#a78bfa",
   event: "#f472b6",
   product: "#60a5fa",
+  default: "#71717a",
 };
 
-function getNodeColor(type?: string) {
-  return TYPE_COLORS[(type || "").toLowerCase()] ?? "#71717a";
+function getColor(type?: string) {
+  return NODE_COLORS[(type || "").toLowerCase()] ?? NODE_COLORS.default;
 }
 
-interface KnowledgeGraphViewProps {
-  nodes: GraphNode[];
-  edges: GraphEdge[];
-}
+interface Props { nodes: GraphNode[]; edges: GraphEdge[]; }
 
-export default function KnowledgeGraphView({ nodes, edges }: KnowledgeGraphViewProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const [dimensions, setDimensions] = useState({ width: 0, height: 0 });
-  const tooltipRef = useRef<HTMLDivElement>(null);
-  const selectedRef = useRef<GraphNode | null>(null);
-  const graphRef = useRef<any>(null);
+export default function KnowledgeGraphView({ nodes, edges }: Props) {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+
+  const layout = useMemo(() => {
+    if (!nodes.length) return { positions: {}, edges: [] };
+    const positions: Record<string, { x: number; y: number }> = {};
+    const W = 580, H = 380, cx = W / 2, cy = H / 2;
+    const R = Math.min(cx, cy) - 50;
+    nodes.forEach((n, i) => {
+      const angle = (2 * Math.PI * i) / nodes.length - Math.PI / 2;
+      positions[n.id] = nodes.length === 1
+        ? { x: cx, y: cy }
+        : { x: cx + R * Math.cos(angle), y: cy + R * Math.sin(angle) };
+    });
+    return { positions, edges: edges.slice(0, 40) };
+  }, [nodes, edges]);
 
   useEffect(() => {
-    if (!containerRef.current) return;
-    const observer = new ResizeObserver((entries) => {
-      if (entries[0]) {
-        setDimensions({
-          width: entries[0].contentRect.width,
-          height: entries[0].contentRect.height,
-        });
-      }
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const { positions, edges: layoutEdges } = layout;
+    const W = canvas.width, H = canvas.height;
+
+    ctx.clearRect(0, 0, W, H);
+
+    // Draw edges
+    layoutEdges.forEach(e => {
+      const src = positions[e.source];
+      const tgt = positions[e.target];
+      if (!src || !tgt) return;
+      ctx.beginPath();
+      ctx.moveTo(src.x, src.y);
+      ctx.lineTo(tgt.x, tgt.y);
+      ctx.strokeStyle = "#3f3f46";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      // Arrow
+      const angle = Math.atan2(tgt.y - src.y, tgt.x - src.x);
+      const mx = (src.x + tgt.x) / 2;
+      const my = (src.y + tgt.y) / 2;
+      ctx.beginPath();
+      ctx.moveTo(mx, my);
+      ctx.lineTo(mx - 6 * Math.cos(angle - 0.4), my - 6 * Math.sin(angle - 0.4));
+      ctx.lineTo(mx - 6 * Math.cos(angle + 0.4), my - 6 * Math.sin(angle + 0.4));
+      ctx.closePath();
+      ctx.fillStyle = "#52525b";
+      ctx.fill();
     });
-    observer.observe(containerRef.current);
-    return () => observer.disconnect();
-  }, []);
 
-  const graphData = useMemo(() => ({
-    nodes: nodes.map(n => ({ ...n })),
-    links: edges.slice(0, 40).map(e => ({ ...e })),
-  }), [nodes, edges]);
+    // Draw nodes
+    nodes.forEach(n => {
+      const pos = positions[n.id];
+      if (!pos) return;
+      const color = getColor(n.type);
 
-  const handleNodeClick = useCallback((node: any) => {
-    selectedRef.current = node as GraphNode;
-    if (tooltipRef.current) {
-      tooltipRef.current.innerHTML = `
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">
-          <span style="font-weight:600;color:white;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:180px">${node.label || "Unknown"}</span>
-          <button onclick="this.closest('.tooltip-card').style.display='none'" style="color:#71717a;background:none;border:none;cursor:pointer;font-size:16px">×</button>
-        </div>
-        <div style="display:flex;align-items:center;gap:8px;font-size:11px">
-          <span style="color:#71717a">Type:</span>
-          <span style="background:#27272a;padding:2px 8px;border-radius:4px;color:#d4d4d8;text-transform:capitalize">${node.type || "unknown"}</span>
-        </div>
-      `;
-      tooltipRef.current.style.display = "block";
-    }
-  }, []);
+      // Circle
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 8, 0, 2 * Math.PI);
+      ctx.fillStyle = color + "33";
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 5, 0, 2 * Math.PI);
+      ctx.fillStyle = color;
+      ctx.fill();
 
-  const handleEngineStop = useCallback(() => {
-    if (graphRef.current) graphRef.current.zoomToFit(400, 40);
-  }, []);
+      // Label
+      const label = (n.label || n.id).slice(0, 22);
+      ctx.font = "10px Inter, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(9,9,11,0.8)";
+      ctx.fillRect(pos.x - tw / 2 - 2, pos.y + 8, tw + 4, 13);
+      ctx.fillStyle = color;
+      ctx.fillText(label, pos.x, pos.y + 9);
+    });
+  }, [layout, nodes]);
+
+  if (!nodes.length) return null;
 
   return (
-    <div className="relative flex h-[400px] w-full flex-col">
-      <div ref={containerRef} className="flex-1 overflow-hidden rounded-lg bg-zinc-950/50 border border-border">
-        {dimensions.width > 0 && dimensions.height > 0 && (
-          <ForceGraph2D
-            ref={graphRef}
-            width={dimensions.width}
-            height={dimensions.height}
-            graphData={graphData}
-            nodeId="id"
-            nodeLabel=""
-            nodeRelSize={5}
-            linkColor={() => "#3f3f46"}
-            linkWidth={1}
-            linkDirectionalArrowLength={3}
-            linkDirectionalArrowRelPos={1}
-            onNodeClick={handleNodeClick}
-            enableNodeDrag={false}
-            cooldownTicks={100}
-            warmupTicks={50}
-            d3AlphaDecay={0.03}
-            d3VelocityDecay={0.7}
-            onEngineStop={handleEngineStop}
-            nodeCanvasObject={(node: any, ctx, globalScale) => {
-              if (node.x == null || node.y == null) return;
-              const color = getNodeColor(node.type);
-              const r = 4;
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, r, 0, 2 * Math.PI);
-              ctx.fillStyle = color;
-              ctx.fill();
-              ctx.strokeStyle = "rgba(0,0,0,0.4)";
-              ctx.lineWidth = 0.5;
-              ctx.stroke();
-              if (globalScale > 0.8) {
-                const label = (node.label || "").slice(0, 18);
-                const fontSize = Math.min(4, 11 / globalScale);
-                ctx.font = `${fontSize}px Sans-Serif`;
-                ctx.textAlign = "center";
-                ctx.textBaseline = "top";
-                ctx.fillStyle = color;
-                ctx.fillText(label, node.x, node.y + r + 1);
-              }
-            }}
-            nodePointerAreaPaint={(node: any, color, ctx) => {
-              ctx.fillStyle = color;
-              ctx.beginPath();
-              ctx.arc(node.x, node.y, 8, 0, 2 * Math.PI);
-              ctx.fill();
-            }}
-          />
-        )}
-      </div>
-
-      <div
-        ref={tooltipRef}
-        className="tooltip-card absolute bottom-4 right-4 z-10 w-56 rounded-xl border border-border bg-surface-overlay p-3 shadow-xl"
-        style={{ display: "none" }}
-      />
-    </div>
+    <canvas
+      ref={canvasRef}
+      width={580}
+      height={380}
+      style={{ width: "100%", height: "100%", borderRadius: "8px" }}
+    />
   );
 }
