@@ -24,7 +24,34 @@ interface GraphPanelProps {
   };
 }
 
-export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps) { {
+function EntityChip({ node }: { node: GraphNode }) {
+  const typeStr = node.type || "unknown";
+  const style = TYPE_STYLES[typeStr.toLowerCase()] ?? TYPE_STYLES.default;
+  return (
+    <span
+      className={clsx(
+        "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
+        style.bg,
+        style.text,
+        style.ring,
+      )}
+    >
+      {node.label || "Unknown"}
+      <span className="opacity-60">{typeStr}</span>
+    </span>
+  );
+}
+
+function MiniStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg bg-surface px-3 py-2.5">
+      <p className="font-mono text-lg font-semibold tabular-nums text-white">{value}</p>
+      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">{label}</p>
+    </div>
+  );
+}
+
+export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps) {
   const hasGraph = nodes.length > 0 || edges.length > 0;
 
   return (
@@ -104,31 +131,4 @@ export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps
       )}
     </div>
   );
-}
-
-function EntityChip({ node }: { node: GraphNode }) {
-  const typeStr = node.type || "unknown";
-  const style = TYPE_STYLES[typeStr.toLowerCase()] ?? TYPE_STYLES.default;
-  return (
-    <span
-      className={clsx(
-        "inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset",
-        style.bg,
-        style.text,
-        style.ring,
-      )}
-    >
-      {node.label || "Unknown"}
-      <span className="opacity-60">{typeStr}</span>
-    </span>
-  );
-}
-
-function MiniStat({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg bg-surface px-3 py-2.5">
-      <p className="font-mono text-lg font-semibold tabular-nums text-white">{value}</p>
-      <p className="text-[10px] font-medium uppercase tracking-wider text-zinc-600">{label}</p>
-    </div>
-  );
-}
+});
