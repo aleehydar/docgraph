@@ -77,13 +77,24 @@ async def test_graph_service_health_mock():
 async def test_manual_traversal_mock():
     from app.services.graph_service import GraphService
 
+    class AsyncIteratorMock:
+        def __init__(self, items):
+            self.items = iter(items)
+            
+        def __aiter__(self):
+            return self
+            
+        async def __anext__(self):
+            try:
+                return next(self.items)
+            except StopIteration:
+                raise StopAsyncIteration
+
     svc = GraphService()
-    mock_result = AsyncMock()
-    mock_result.__aiter__ = MagicMock(return_value=iter([]))
     mock_session = AsyncMock()
     mock_session.__aenter__.return_value = mock_session
     mock_session.__aexit__.return_value = False
-    mock_session.run = AsyncMock(return_value=mock_result)
+    mock_session.run = AsyncMock(return_value=AsyncIteratorMock([]))
     mock_driver = MagicMock()
     mock_driver.session = MagicMock(return_value=mock_session)
     svc._driver = mock_driver
