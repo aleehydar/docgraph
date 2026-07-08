@@ -33,6 +33,12 @@ export interface QueryMeta {
   graph_hops: number;
   nodes: GraphNode[];
   edges: GraphEdge[];
+  confidence?: number;
+  citations?: Array<{
+    source: string;
+    excerpt: string;
+    score: number;
+  }>;
 }
 
 export interface QueryToken {

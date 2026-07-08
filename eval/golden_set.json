@@ -1,0 +1,28 @@
+[
+  {
+    "name": "basic-citation-case",
+    "query": "Who created Claude?",
+    "graph": {
+      "nodes": [{"name": "Anthropic", "type": "ORG"}, {"name": "Claude", "type": "PRODUCT"}],
+      "edges": [{"src": "Anthropic", "tgt": "Claude", "rel": "CREATED", "ctx": "product launch"}],
+      "hops": 2
+    },
+    "chunks": [
+      {"chunk_id": "doc1_c1", "text": "Anthropic created Claude and published the model.", "score": 0.08}
+    ],
+    "expected_keywords": ["Anthropic", "Claude"],
+    "min_confidence": 0.2
+  },
+  {
+    "name": "graph-only-case",
+    "query": "What relationship is known between court and company?",
+    "graph": {
+      "nodes": [{"name": "court", "type": "CONCEPT"}, {"name": "company", "type": "ORG"}],
+      "edges": [{"src": "court", "tgt": "company", "rel": "RELATED_TO", "ctx": ""}],
+      "hops": 2
+    },
+    "chunks": [],
+    "expected_keywords": ["court", "company"],
+    "min_confidence": 0.1
+  }
+]

@@ -16,6 +16,10 @@ class Settings(BaseSettings):
     # App
     app_env: str = "development"
     log_level: str = "INFO"
+    cors_origins: str = "http://localhost:5173,http://localhost:8501"
+    api_auth_token: str = ""
+    admin_auth_token: str = ""
+    allow_system_reset: bool = False
 
     # Embeddings
     embedding_model: str = "all-MiniLM-L6-v2"
@@ -26,9 +30,10 @@ class Settings(BaseSettings):
     # MLflow
     mlflow_tracking_uri: str = "./mlruns"
 
-    class Config:
-        env_file = ".env"
-        case_sensitive = False
+    model_config = {
+        "env_file": ".env",
+        "case_sensitive": False,
+    }
 
 
 @lru_cache()

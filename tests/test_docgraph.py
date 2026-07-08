@@ -1,11 +1,33 @@
+import builtins
+import json
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
+
 import pytest
-import asyncio
-from unittest.mock import AsyncMock, patch, MagicMock
+
 from app.services.ingestion_service import chunk_text, extract_text
 
 
-# ── Unit tests ────────────────────────────────────────────────────────────────
+@pytest.fixture
+def client():
+    from fastapi.testclient import TestClient
+    from app.main import app
 
+    with (
+        patch("app.main.graph_service.connect", AsyncMock()),
+        patch("app.main.graph_service.close", AsyncMock()),
+        patch("app.main.get_embedder", MagicMock()),
+        patch("app.main.get_faiss_index", MagicMock(return_value=SimpleNamespace(ntotal=0))),
+    ):
+        with TestClient(app) as c:
+            yield c
+
+
+def auth_headers():
+    return {"Authorization": "Bearer test-token"}
+
+
+# Unit tests
 def test_chunk_text_basic():
     text = " ".join(["word"] * 1200)
     chunks = chunk_text(text, chunk_size=500, overlap=80)
@@ -25,7 +47,6 @@ def test_chunk_text_overlap():
     words = [f"w{i}" for i in range(600)]
     text = " ".join(words)
     chunks = chunk_text(text, chunk_size=100, overlap=20)
-    # Overlapping: last words of chunk N should appear in chunk N+1
     c0_words = set(chunks[0].split())
     c1_words = set(chunks[1].split())
     assert len(c0_words & c1_words) > 0
@@ -37,11 +58,10 @@ def test_extract_text_txt():
     assert "Hello world" in result
 
 
-# ── Graph service unit tests ──────────────────────────────────────────────────
-
 @pytest.mark.asyncio
 async def test_graph_service_health_mock():
     from app.services.graph_service import GraphService
+
     svc = GraphService()
     mock_driver = AsyncMock()
     mock_session = AsyncMock()
@@ -55,25 +75,21 @@ async def test_graph_service_health_mock():
 @pytest.mark.asyncio
 async def test_manual_traversal_mock():
     from app.services.graph_service import GraphService
-    svc = GraphService()
 
+    svc = GraphService()
     mock_result = AsyncMock()
     mock_result.__aiter__ = MagicMock(return_value=iter([]))
-
     mock_session = AsyncMock()
     mock_session.run = AsyncMock(return_value=mock_result)
-
     mock_driver = AsyncMock()
     mock_driver.session.return_value.__aenter__ = AsyncMock(return_value=mock_session)
     mock_driver.session.return_value.__aexit__ = AsyncMock(return_value=False)
-
     svc._driver = mock_driver
+
     result = await svc._manual_traversal(["TestEntity"], hops=2)
     assert "nodes" in result
     assert "edges" in result
 
-
-# ── Ingestion pipeline integration test (mocked LLM) ────────────────────────
 
 @pytest.mark.asyncio
 async def test_ingest_txt_document():
@@ -91,6 +107,7 @@ async def test_ingest_txt_document():
         patch("app.services.graph_service.graph_service.upsert_entity", AsyncMock()),
         patch("app.services.graph_service.graph_service.upsert_relationship", AsyncMock()),
         patch("app.services.ingestion_service.save_faiss_index", MagicMock()),
+        patch("app.services.ingestion_service.embed_and_store", MagicMock()),
     ):
         content = b"Anthropic created Claude. Claude is a large language model."
         result = await ingest_document(content, "test.txt")
@@ -98,16 +115,7 @@ async def test_ingest_txt_document():
         assert result.entities >= 1
 
 
-# ── API endpoint tests ────────────────────────────────────────────────────────
-
-@pytest.fixture
-def client():
-    from fastapi.testclient import TestClient
-    from app.main import app
-    with TestClient(app) as c:
-        yield c
-
-
+# API endpoint tests
 def test_root_endpoint(client):
     r = client.get("/")
     assert r.status_code == 200
@@ -115,13 +123,82 @@ def test_root_endpoint(client):
 
 
 def test_health_endpoint_structure(client):
-    with patch("app.services.graph_service.graph_service.health", AsyncMock(return_value="ok")):
+    with patch("app.main.graph_service.health", AsyncMock(return_value="ok")):
         r = client.get("/health")
         assert r.status_code == 200
         data = r.json()
         assert "neo4j" in data
         assert "faiss" in data
         assert "llm" in data
+
+
+def test_query_stream_requires_auth_when_token_set(client):
+    with patch("app.api.security.settings.api_auth_token", "test-token"):
+        r = client.post("/query/stream", json={"query": "what is docgraph?", "stream": True})
+        assert r.status_code == 401
+
+
+def test_query_stream_meta_contains_confidence_and_citations(client):
+    async def _fake_stream(**_kwargs):
+        meta = {
+            "type": "meta",
+            "graph_nodes": 1,
+            "graph_edges": 1,
+            "vector_chunks": 1,
+            "graph_hops": 2,
+            "nodes": [{"id": "A", "label": "A", "type": "CONCEPT"}],
+            "edges": [{"source": "A", "target": "B", "type": "RELATED_TO"}],
+            "citations": [{"source": "c1", "excerpt": "x", "score": 0.8}],
+            "confidence": 0.72,
+        }
+        yield f"data: {json.dumps(meta)}\n\n"
+        yield "data: {\"type\": \"done\"}\n\n"
+
+    with (
+        patch("app.api.security.settings.api_auth_token", "test-token"),
+        patch("app.api.query.retrieve_and_stream", _fake_stream),
+    ):
+        with client.stream(
+            "POST",
+            "/query/stream",
+            headers=auth_headers(),
+            json={"query": "What is X?", "stream": True},
+        ) as resp:
+            assert resp.status_code == 200
+            text = "".join(chunk.decode("utf-8") if isinstance(chunk, bytes) else chunk for chunk in resp.iter_raw())
+            assert "\"confidence\": 0.72" in text
+            assert "\"citations\"" in text
+
+
+@pytest.mark.asyncio
+async def test_retrieve_and_answer_emits_citations_and_confidence():
+    from app.services import retrieval_service
+
+    class _FakeResp:
+        choices = [SimpleNamespace(message=SimpleNamespace(content="Grounded answer"))]
+
+    class _FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                async def create(**_kwargs):
+                    return _FakeResp()
+
+    with (
+        patch("app.services.retrieval_service.detect_query_entities", AsyncMock(return_value=["Alpha"])),
+        patch(
+            "app.services.retrieval_service.graph_service.multi_hop_traversal",
+            AsyncMock(return_value={"nodes": [{"name": "Alpha", "type": "ORG"}], "edges": [], "hops": 2}),
+        ),
+        patch(
+            "app.services.retrieval_service.vector_search",
+            MagicMock(return_value=[{"chunk_id": "doc_c0", "text": "Alpha founded Beta", "score": 0.1}]),
+        ),
+        patch("app.services.retrieval_service.get_groq_client", MagicMock(return_value=_FakeClient())),
+    ):
+        resp = await retrieval_service.retrieve_and_answer("Who founded Beta?")
+        assert resp.citations
+        assert 0.0 <= resp.confidence <= 1.0
 
 
 def test_startup_skips_missing_embedder():
@@ -132,7 +209,7 @@ def test_startup_skips_missing_embedder():
         patch("app.main.graph_service.connect", AsyncMock()),
         patch("app.main.graph_service.close", AsyncMock()),
         patch("app.main.get_embedder", side_effect=ModuleNotFoundError("sentence_transformers")),
-        patch("app.main.get_faiss_index", MagicMock()),
+        patch("app.main.get_faiss_index", MagicMock(return_value=SimpleNamespace(ntotal=0))),
         patch("app.main.logger.warning") as warning_mock,
     ):
         with TestClient(app) as c:
@@ -142,7 +219,6 @@ def test_startup_skips_missing_embedder():
 
 
 def test_get_embedder_defers_sentence_transformers_import():
-    import builtins
     from app.services import ingestion_service
 
     original_import = builtins.__import__
@@ -161,8 +237,6 @@ def test_get_embedder_defers_sentence_transformers_import():
 
 
 def test_get_embedder_initializes_when_sentence_transformers_available():
-    import builtins
-    from types import SimpleNamespace
     from app.services import ingestion_service
 
     class FakeSentenceTransformer:

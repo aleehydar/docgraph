@@ -7,7 +7,7 @@ from groq import AsyncGroq
 from app.core.config import get_settings
 from app.services.graph_service import graph_service
 from app.services.ingestion_service import vector_search, get_groq_client
-from app.models.schemas import QueryResponse, GraphContext, GraphNode, GraphEdge
+from app.models.schemas import QueryResponse, GraphContext, GraphNode, GraphEdge, Citation
 
 settings = get_settings()
 
@@ -74,6 +74,31 @@ def build_system_prompt(graph_context: dict, vector_chunks: list[dict]) -> str:
     return "\n".join(parts)
 
 
+def build_citations(vector_chunks: list[dict]) -> list[Citation]:
+    citations: list[Citation] = []
+    for chunk in vector_chunks[:5]:
+        excerpt = chunk.get("text", "").strip().replace("\n", " ")
+        citations.append(
+            Citation(
+                source=chunk.get("chunk_id", "unknown"),
+                excerpt=excerpt[:220],
+                score=round(max(0.0, 1.0 - float(chunk.get("score", 1.0))), 4),
+            )
+        )
+    return citations
+
+
+def estimate_confidence(graph_ctx: dict, vector_chunks: list[dict]) -> float:
+    graph_signal = min(1.0, len(graph_ctx.get("nodes", [])) / 12)
+    vector_signal = min(1.0, len(vector_chunks) / 5)
+    score_signal = 0.0
+    if vector_chunks:
+        avg_dist = sum(float(c.get("score", 1.0)) for c in vector_chunks[:5]) / min(5, len(vector_chunks))
+        score_signal = 1.0 / (1.0 + max(avg_dist, 0.0))
+    confidence = (0.45 * vector_signal) + (0.35 * score_signal) + (0.20 * graph_signal)
+    return round(max(0.0, min(1.0, confidence)), 3)
+
+
 # ── Main retrieval pipeline ───────────────────────────────────────────────────
 
 async def retrieve_and_answer(
@@ -128,12 +153,17 @@ async def retrieve_and_answer(
         subgraph_summary=f"{len(graph_ctx['nodes'])} entities, {len(graph_ctx['edges'])} relationships across {graph_ctx.get('hops', 0)} hops",
     )
 
+    citations = build_citations(vector_chunks)
+    confidence = estimate_confidence(graph_ctx, vector_chunks)
+
     return QueryResponse(
         answer=answer,
         graph_context=graph_context_model,
         vector_chunks_used=len(vector_chunks),
         graph_hops=graph_ctx.get("hops", 0),
         latency_ms=round((time.time() - t0) * 1000, 2),
+        confidence=confidence,
+        citations=citations,
     )
 
 
@@ -176,6 +206,15 @@ async def retrieve_and_stream(
             {"source": e["src"], "target": e["tgt"], "type": e["rel"]}
             for e in graph_ctx["edges"][:15]
         ],
+        "citations": [
+            {
+                "source": c.source,
+                "excerpt": c.excerpt,
+                "score": c.score,
+            }
+            for c in build_citations(vector_chunks)
+        ],
+        "confidence": estimate_confidence(graph_ctx, vector_chunks),
     }
     yield f"data: {json.dumps(meta)}\n\n"
 

@@ -23,7 +23,7 @@ class GraphNode(BaseModel):
     id: str
     label: str
     type: str
-    properties: dict = {}
+    properties: dict = Field(default_factory=dict)
 
 
 class GraphEdge(BaseModel):
@@ -33,9 +33,14 @@ class GraphEdge(BaseModel):
 
 
 class GraphContext(BaseModel):
-    nodes: list[GraphNode] = []
-    edges: list[GraphEdge] = []
+    nodes: list[GraphNode] = Field(default_factory=list)
+    edges: list[GraphEdge] = Field(default_factory=list)
     subgraph_summary: str = ""
+
+class Citation(BaseModel):
+    source: str
+    excerpt: str
+    score: float = 0.0
 
 
 class QueryResponse(BaseModel):
@@ -44,6 +49,8 @@ class QueryResponse(BaseModel):
     vector_chunks_used: int = 0
     graph_hops: int = 0
     latency_ms: float = 0.0
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    citations: list[Citation] = Field(default_factory=list)
 
 
 class HealthResponse(BaseModel):

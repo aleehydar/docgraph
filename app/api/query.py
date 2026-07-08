@@ -1,8 +1,9 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Depends
 from fastapi.responses import StreamingResponse
 from app.services.retrieval_service import retrieve_and_answer, retrieve_and_stream
 from app.models.schemas import QueryRequest, QueryResponse
 from loguru import logger
+from app.api.security import require_api_auth
 
 router = APIRouter(prefix="/query", tags=["Query"])
 
@@ -12,7 +13,7 @@ router = APIRouter(prefix="/query", tags=["Query"])
     response_model=QueryResponse,
     summary="Query the knowledge graph (non-streaming)",
 )
-async def query(req: QueryRequest):
+async def query(req: QueryRequest, _auth: None = Depends(require_api_auth)):
     if req.stream:
         raise HTTPException(
             status_code=400,
@@ -31,7 +32,7 @@ async def query(req: QueryRequest):
 
 
 @router.post("/stream", summary="Query with SSE token streaming")
-async def query_stream(req: QueryRequest):
+async def query_stream(req: QueryRequest, _auth: None = Depends(require_api_auth)):
     async def event_generator():
         try:
             async for chunk in retrieve_and_stream(

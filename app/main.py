@@ -12,6 +12,8 @@ from app.services.ingestion_service import get_embedder, get_faiss_index
 from app.models.schemas import HealthResponse
 
 settings = get_settings()
+cors_origins = [o.strip() for o in settings.cors_origins.split(",") if o.strip()]
+allow_all_origins = "*" in cors_origins
 
 
 @asynccontextmanager
@@ -44,8 +46,8 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
+    allow_origins=cors_origins or ["http://localhost:5173"],
+    allow_credentials=not allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -63,8 +65,9 @@ async def health():
     neo4j_status = await graph_service.health()
     from app.services.ingestion_service import get_faiss_index
     faiss_status = f"ok ({get_faiss_index().ntotal} vectors)"
+    overall_status = "ok" if neo4j_status.startswith("ok") and faiss_status.startswith("ok") else "degraded"
     return HealthResponse(
-        status="ok",
+        status=overall_status,
         neo4j=neo4j_status,
         faiss=faiss_status,
         llm=settings.llm_model,

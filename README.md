@@ -15,3 +15,6 @@ General-purpose GraphRAG system integrating Neo4j knowledge graphs with FAISS ve
 - Real-time SSE streaming
 - Force-directed interactive knowledge graph visualization
 - System reset endpoint
+- Optional bearer-token auth for ingest/query/reset endpoints
+- Confidence + citation metadata in query responses
+- Regression evaluation harness (`eval/run_eval.py`) with CI gating

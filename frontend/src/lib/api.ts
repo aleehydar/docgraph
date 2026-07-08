@@ -2,6 +2,10 @@ import type { HealthResponse, IngestResponse, QuerySettings, StreamEvent } from 
 
 export const API_BASE = import.meta.env.VITE_API_BASE || "/api";
 
+function withAuthHeaders(headers: HeadersInit = {}): HeadersInit {
+  return headers;
+}
+
 async function handleResponse<T>(resp: Response): Promise<T> {
   if (!resp.ok) {
     let detail = resp.statusText;
@@ -17,7 +21,7 @@ async function handleResponse<T>(resp: Response): Promise<T> {
 }
 
 export async function fetchHealth(): Promise<HealthResponse> {
-  const resp = await fetch(`${API_BASE}/health`);
+  const resp = await fetch(`${API_BASE}/health`, { headers: withAuthHeaders() });
   return handleResponse<HealthResponse>(resp);
 }
 
@@ -26,6 +30,7 @@ export async function ingestDocument(file: File): Promise<IngestResponse> {
   form.append("file", file);
   const resp = await fetch(`${API_BASE}/ingest/`, {
     method: "POST",
+    headers: withAuthHeaders(),
     body: form,
   });
   return handleResponse<IngestResponse>(resp);
@@ -37,7 +42,7 @@ export async function* streamQuery(
 ): AsyncGenerator<StreamEvent> {
   const resp = await fetch(`${API_BASE}/query/stream`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: withAuthHeaders({ "Content-Type": "application/json" }),
     body: JSON.stringify({
       query,
       top_k: settings.topK,
@@ -85,6 +90,9 @@ export function isServiceOk(status: string): boolean {
 }
 
 export async function resetDatabase(): Promise<{ message: string }> {
-  const resp = await fetch(`${API_BASE}/ingest/reset`, { method: "POST" });
+  const resp = await fetch(`${API_BASE}/ingest/reset`, {
+    method: "POST",
+    headers: withAuthHeaders(),
+  });
   return handleResponse<{ message: string }>(resp);
 }

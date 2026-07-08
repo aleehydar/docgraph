@@ -190,6 +190,26 @@ export default function QueryView({ settings }: QueryViewProps) {
                 </div>
               )}
             </div>
+            {meta && (
+              <div className="border-t border-border px-5 py-3">
+                <div className="flex items-center justify-between text-[11px] text-zinc-500">
+                  <span>Confidence</span>
+                  <span className="font-mono text-emerald-400">
+                    {Math.round((meta.confidence ?? 0) * 100)}%
+                  </span>
+                </div>
+                {(meta.citations?.length ?? 0) > 0 && (
+                  <div className="mt-3 space-y-2">
+                    {meta.citations?.slice(0, 3).map((c) => (
+                      <div key={`${c.source}-${c.score}`} className="rounded-md bg-surface px-3 py-2">
+                        <p className="truncate font-mono text-[10px] text-zinc-400">{c.source}</p>
+                        <p className="mt-0.5 text-xs text-zinc-500">{c.excerpt}</p>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Graph context */}
