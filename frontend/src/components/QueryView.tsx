@@ -1,6 +1,6 @@
 import clsx from "clsx";
 import { ArrowUp, Loader2 } from "lucide-react";
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import { streamQuery } from "../lib/api";
 import type { QueryMeta, QuerySettings } from "../types";
@@ -75,6 +75,19 @@ export default function QueryView({ settings }: QueryViewProps) {
 
   const isLoading = phase === "retrieving" || phase === "generating";
   const showContext = meta && (phase === "generating" || phase === "done");
+
+  const graphStats = useMemo(
+    () =>
+      meta
+        ? {
+            graphNodes: meta.graph_nodes,
+            graphEdges: meta.graph_edges,
+            vectorChunks: meta.vector_chunks,
+            graphHops: meta.graph_hops ?? 0,
+          }
+        : null,
+    [meta],
+  );
 
   return (
     <div className="flex h-full flex-col animate-fade-in">
@@ -186,16 +199,11 @@ export default function QueryView({ settings }: QueryViewProps) {
                 Retrieved context
               </p>
             </div>
-            {meta ? (
+            {meta && graphStats ? (
               <GraphPanel
                 nodes={meta.nodes ?? []}
                 edges={meta.edges ?? []}
-                stats={{
-                  graphNodes: meta.graph_nodes,
-                  graphEdges: meta.graph_edges,
-                  vectorChunks: meta.vector_chunks,
-                  graphHops: meta.graph_hops ?? 0,
-                }}
+                stats={graphStats}
               />
             ) : (
               <div className="flex flex-1 items-center justify-center p-6 text-xs text-zinc-600">

@@ -80,10 +80,10 @@ export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps
           </p>
         </div>
       ) : (
-        <div className="flex-1 overflow-y-auto">
-          {/* Mini graph viz */}
+        <div className="flex min-h-0 flex-1 flex-col">
+          {/* Graph stays outside scroll area so drag never fights overflow scrolling */}
           {nodes.length > 0 && (
-            <div className="border-b border-border p-4">
+            <div className="shrink-0 border-b border-border p-4">
               <p className="mb-3 text-[10px] font-semibold uppercase tracking-widest text-zinc-600">
                 Subgraph
               </p>
@@ -91,6 +91,7 @@ export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps
             </div>
           )}
 
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
           {/* Entity list */}
           {nodes.length > 0 && (
             <div className="border-b border-border p-4">
@@ -127,6 +128,7 @@ export default memo(function GraphPanel({ nodes, edges, stats }: GraphPanelProps
               </div>
             </div>
           )}
+          </div>
         </div>
       )}
     </div>
