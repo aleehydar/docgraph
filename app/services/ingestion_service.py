@@ -1,9 +1,12 @@
 import uuid
 import json
+import asyncio
+import os
 from pathlib import Path
 from typing import AsyncGenerator, TYPE_CHECKING
 from loguru import logger
 
+import groq
 from groq import AsyncGroq
 import faiss
 import numpy as np
@@ -134,23 +137,35 @@ Text:
 
 async def extract_entities_from_chunk(chunk: str) -> dict:
     client = get_groq_client()
-    try:
-        resp = await client.chat.completions.create(
-            model=settings.llm_model,
-            messages=[{"role": "user", "content": ENTITY_PROMPT.format(text=chunk[:2000])}],
-            temperature=0.0,
-            max_tokens=1024,
-        )
-        raw = resp.choices[0].message.content.strip()
-        # Strip possible markdown fences
-        if raw.startswith("```"):
-            raw = raw.split("```")[1]
-            if raw.startswith("json"):
-                raw = raw[4:]
-        return json.loads(raw)
-    except Exception as e:
-        logger.warning(f"Entity extraction failed: {e}")
-        return {"entities": [], "relationships": []}
+    max_retries = 5
+    base_delay = 2
+    
+    for attempt in range(max_retries):
+        try:
+            resp = await client.chat.completions.create(
+                model=settings.llm_model,
+                messages=[{"role": "user", "content": ENTITY_PROMPT.format(text=chunk[:2000])}],
+                temperature=0.0,
+                max_tokens=1024,
+            )
+            raw = resp.choices[0].message.content.strip()
+            # Strip possible markdown fences
+            if raw.startswith("```"):
+                raw = raw.split("```")[1]
+                if raw.startswith("json"):
+                    raw = raw[4:]
+            return json.loads(raw)
+        except Exception as e:
+            if isinstance(e, (groq.RateLimitError, groq.APIError, groq.InternalServerError)) and attempt < max_retries - 1:
+                delay = base_delay * (2 ** attempt)
+                logger.warning(f"API error on entity extraction: {e}. Retrying in {delay}s... (Attempt {attempt+1}/{max_retries})")
+                await asyncio.sleep(delay)
+            else:
+                if attempt == max_retries - 1:
+                    logger.warning(f"Entity extraction failed permanently after {max_retries} attempts: {e}")
+                else:
+                    logger.warning(f"Entity extraction failed: {e}")
+                return {"entities": [], "relationships": []}
 
 
 # ── Embedding & FAISS ────────────────────────────────────────────────────────
@@ -203,40 +218,53 @@ async def ingest_document(
 
     total_entities = 0
     total_rels = 0
+    processed_chunks = 0
+    total_chunks = len(chunks)
 
-    for i, chunk_text_str in enumerate(chunks):
+    concurrency_limit = int(os.getenv("MAX_CONCURRENT_LLM_CALLS", "5"))
+    sem = asyncio.Semaphore(concurrency_limit)
+
+    async def process_chunk(i: int, chunk_text_str: str):
+        nonlocal total_entities, total_rels, processed_chunks
         chunk_id = f"{doc_id}_c{i}"
+        
+        async with sem:
+            # 4. Store chunk in Neo4j
+            await graph_service.upsert_chunk(chunk_id, doc_id, chunk_text_str, i)
+    
+            # 5. Embed + store in FAISS
+            embed_and_store(chunk_id, doc_id, chunk_text_str)
+    
+            # 6. Extract entities & relationships (every chunk)
+            extracted = await extract_entities_from_chunk(chunk_text_str)
+    
+            for ent in extracted.get("entities", []):
+                if ent.get("name"):
+                    await graph_service.upsert_entity(
+                        name=ent["name"],
+                        entity_type=ent.get("type", "CONCEPT"),
+                        doc_id=doc_id,
+                        chunk_id=chunk_id,
+                        description=ent.get("description", ""),
+                    )
+                    total_entities += 1
+    
+            for rel in extracted.get("relationships", []):
+                if rel.get("source") and rel.get("target"):
+                    await graph_service.upsert_relationship(
+                        source_name=rel["source"],
+                        target_name=rel["target"],
+                        rel_type=rel.get("type", "RELATED_TO"),
+                        doc_id=doc_id,
+                        context=rel.get("context", ""),
+                    )
+                    total_rels += 1
+                    
+            processed_chunks += 1
+            logger.info(f"Processed {processed_chunks}/{total_chunks} chunks for doc {doc_id}")
 
-        # 4. Store chunk in Neo4j
-        await graph_service.upsert_chunk(chunk_id, doc_id, chunk_text_str, i)
-
-        # 5. Embed + store in FAISS
-        embed_and_store(chunk_id, doc_id, chunk_text_str)
-
-        # 6. Extract entities & relationships (every chunk)
-        extracted = await extract_entities_from_chunk(chunk_text_str)
-
-        for ent in extracted.get("entities", []):
-            if ent.get("name"):
-                await graph_service.upsert_entity(
-                    name=ent["name"],
-                    entity_type=ent.get("type", "CONCEPT"),
-                    doc_id=doc_id,
-                    chunk_id=chunk_id,
-                    description=ent.get("description", ""),
-                )
-                total_entities += 1
-
-        for rel in extracted.get("relationships", []):
-            if rel.get("source") and rel.get("target"):
-                await graph_service.upsert_relationship(
-                    source_name=rel["source"],
-                    target_name=rel["target"],
-                    rel_type=rel.get("type", "RELATED_TO"),
-                    doc_id=doc_id,
-                    context=rel.get("context", ""),
-                )
-                total_rels += 1
+    tasks = [process_chunk(i, chunk_text_str) for i, chunk_text_str in enumerate(chunks)]
+    await asyncio.gather(*tasks)
 
     # 7. Persist FAISS index
     save_faiss_index()
